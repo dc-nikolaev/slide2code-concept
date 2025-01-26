@@ -1,0 +1,24 @@
+{
+  "name": "slide2code-concept",
+  "version": "0.0.0",
+  "type": "module",
+  "prettier": "@37bytes/prettier-config",
+  "dependencies": {
+    "@37bytes/prettier-config": "1.0.2",
+    "@ai-sdk/openai": "1.1.2",
+    "@hono/node-server": "1.13.7",
+    "ai": "4.1.5",
+    "dotenv": "16.4.1",
+    "hono": "4.6.19",
+    "prettier": "3.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.10",
+    "tsx": "4.7.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "format": "prettier --write ./src"
+  }
+}

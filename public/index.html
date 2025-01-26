@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slide2Image</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">Slide2Image</h1>
+
+        <!-- Основной блок загрузки -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <!-- Зона для загрузки -->
+            <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition-colors">
+                <p class="text-gray-600 mb-2">Перетащите изображение сюда или вставьте из буфера обмена (Ctrl+V)</p>
+                <p class="text-sm text-gray-500">(поддерживаются форматы JPG, PNG)</p>
+            </div>
+
+            <!-- Превью изображения -->
+            <div id="preview-container" class="hidden mt-4">
+                <div class="relative">
+                    <img id="preview-image" class="w-full max-h-96 object-contain rounded-lg" alt="Превью">
+                    <button id="remove-preview" class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Кнопка генерации -->
+            <button id="generate-btn" class="w-full mt-4 bg-blue-500 text-white py-3 px-4 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed hidden">
+                Генерировать
+            </button>
+
+            <!-- Индикатор прогресса -->
+            <div id="progress-container" class="hidden mt-4">
+                <div class="flex items-center justify-center space-x-2">
+                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                    <span class="text-gray-600">Обработка изображения...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Блок истории операций -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">История операций</h2>
+            <div id="history-list" class="space-y-4">
+                <!-- Сообщение о пустой истории -->
+                <div id="empty-history" class="text-center py-8 text-gray-500">
+                    История операций пуста
+                </div>
+                <!-- Шаблон элемента истории -->
+                <template id="history-item-template">
+                    <div class="border-l-4 border-blue-500 pl-4 py-3 bg-gray-50 rounded">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-sm font-medium text-gray-900">Конвертация изображения</span>
+                            <span class="text-xs text-gray-500 history-time"></span>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <div class="flex justify-between mb-1">
+                                <span>Токены (ввод):</span>
+                                <span class="history-prompt-tokens"></span>
+                            </div>
+                            <div class="flex justify-between mb-1">
+                                <span>Токены (вывод):</span>
+                                <span class="history-completion-tokens"></span>
+                            </div>
+                            <div class="flex justify-between mb-1">
+                                <span>Время генерации:</span>
+                                <span class="history-generation-time"></span>
+                            </div>
+                            <div class="flex justify-between font-medium text-gray-900">
+                                <span>Стоимость:</span>
+                                <span class="history-cost"></span>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const historyList = document.getElementById('history-list');
+        const historyTemplate = document.getElementById('history-item-template');
+        const emptyHistory = document.getElementById('empty-history');
+        const previewContainer = document.getElementById('preview-container');
+        const previewImage = document.getElementById('preview-image');
+        const removePreview = document.getElementById('remove-preview');
+        const progressContainer = document.getElementById('progress-container');
+        const generateButton = document.getElementById('generate-btn');
+
+        if (!dropZone || !historyList || !historyTemplate || !emptyHistory ||
+            !previewContainer || !previewImage || !removePreview || !progressContainer || !generateButton) {
+            console.error('Не удалось найти необходимые элементы DOM');
+            throw new Error('Не удалось найти необходимые элементы DOM');
+        }
+
+        let isProcessing = false;
+        let currentFile = null;
+
+
+        const operationsHistory = [];
+
+        function formatCost(cost) {
+            return `$${cost.toFixed(6)}`;
+        }
+
+        function formatTime(ms) {
+            if (ms < 1000) return `${ms}мс`;
+            return `${(ms / 1000).toFixed(1)}с`;
+        }
+
+        function addHistoryItem(usage, generationTime) {
+            operationsHistory.unshift({
+                time: new Date().toLocaleTimeString(),
+                promptTokens: usage.promptTokens,
+                completionTokens: usage.completionTokens,
+                cost: usage.cost,
+                generationTime
+            });
+            updateHistoryDisplay();
+        }
+
+        function updateHistoryDisplay() {
+            historyList.innerHTML = '';
+
+            if (operationsHistory.length === 0) {
+                historyList.appendChild(emptyHistory);
+                return;
+            }
+
+            for (const operation of operationsHistory) {
+                const clone = document.importNode(historyTemplate.content, true);
+
+                const timeElement = clone.querySelector('.history-time');
+                const promptTokens = clone.querySelector('.history-prompt-tokens');
+                const completionTokens = clone.querySelector('.history-completion-tokens');
+                const generationTime = clone.querySelector('.history-generation-time');
+                const costElement = clone.querySelector('.history-cost');
+
+                timeElement.textContent = operation.time;
+                promptTokens.textContent = operation.promptTokens.toString();
+                completionTokens.textContent = operation.completionTokens.toString();
+                generationTime.textContent = formatTime(operation.generationTime);
+                costElement.textContent = formatCost(operation.cost);
+
+                historyList.appendChild(clone);
+            }
+        }
+
+        function showPreview(file) {
+            currentFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewContainer.classList.remove('hidden');
+                generateButton.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearPreview() {
+            currentFile = null;
+            previewContainer.classList.add('hidden');
+            generateButton.classList.add('hidden');
+            previewImage.src = '';
+        }
+
+        removePreview.addEventListener('click', () => {
+            if (!isProcessing) {
+                clearPreview();
+            }
+        });
+
+        async function handleImageUpload(file) {
+            showPreview(file);
+        }
+
+        async function generateHtml() {
+            if (!currentFile || isProcessing) return;
+
+            try {
+                isProcessing = true;
+                generateButton.disabled = true;
+                progressContainer.classList.remove('hidden');
+
+                const startTime = performance.now();
+
+                const formData = new FormData();
+                formData.append('file', currentFile);
+
+                const response = await fetch('/api/vision', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+
+                const generationTime = Math.round(performance.now() - startTime);
+                addHistoryItem(result.usage, generationTime);
+
+                const blob = new Blob([result.html], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'converted-slide.html';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                clearPreview();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Произошла ошибка при обработке изображения');
+                clearPreview();
+            } finally {
+                isProcessing = false;
+                generateButton.disabled = false;
+                progressContainer.classList.add('hidden');
+            }
+        }
+
+        generateButton.addEventListener('click', generateHtml);
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!isProcessing) {
+                dropZone.classList.add('border-blue-500');
+            }
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-blue-500');
+        });
+
+        dropZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-500');
+
+            if (isProcessing) {
+                alert('Дождитесь окончания текущей обработки');
+                return;
+            }
+
+            const file = e.dataTransfer?.files?.[0];
+            if (!file) {
+                alert('Не удалось получить файл');
+                return;
+            }
+
+            if (file.type.startsWith('image/')) {
+                await handleImageUpload(file);
+            } else {
+                alert('Пожалуйста, загрузите изображение');
+            }
+        });
+
+        document.addEventListener('paste', async (e) => {
+            if (isProcessing) {
+                alert('Дождитесь окончания текущей обработки');
+                return;
+            }
+
+            const items = e.clipboardData?.items;
+            if (!items) return;
+
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) {
+                        await handleImageUpload(file);
+                    }
+                    break;
+                }
+            }
+        });
+
+        updateHistoryDisplay();
+    </script>
+</body>
+</html>
